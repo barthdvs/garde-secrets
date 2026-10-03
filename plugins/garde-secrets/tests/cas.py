@@ -16,7 +16,7 @@ F_GITHUB = "gh" + "p_" + "a1B2" * 9
 F_AWS = "AK" + "IA" + "ABCDEFGHIJKLMNOP"
 F_CLE = "-----BEGIN " + "RSA PRIVATE KEY-----\nMIIfaux\n"
 F_MDP = 'pass' + 'word = "Xk29fjdk20dkfj3"\n'
-F_YAML = 'api_' + 'key: 9f8e7d6c5b4a39281706f5e4\n'
+F_YAML = 'api_' + 'key: 9f8e7d6c5b4a39281706f5e4\n'  # gitleaks:allow (faux secret du banc d'essai)
 F_URL = "DATABASE_URL=postgres://appli:" + "s3cretMdp42" + "@db.example.com/base\n"
 
 

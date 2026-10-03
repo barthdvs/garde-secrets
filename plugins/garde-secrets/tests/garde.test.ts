@@ -12,7 +12,7 @@ const F_GITHUB = 'gh' + 'p_' + 'a1B2'.repeat(9)
 const F_AWS = 'AK' + 'IA' + 'ABCDEFGHIJKLMNOP'
 const F_CLE = '-----BEGIN ' + 'RSA PRIVATE KEY-----\nMIIfaux\n'
 const F_MDP = 'pass' + 'word = "Xk29fjdk20dkfj3"\n'
-const F_YAML = 'api_' + 'key: 9f8e7d6c5b4a39281706f5e4\n'
+const F_YAML = 'api_' + 'key: 9f8e7d6c5b4a39281706f5e4\n' // gitleaks:allow (faux secret du banc d'essai)
 const F_URL = 'DATABASE_URL=postgres://appli:' + 's3cretMdp42' + '@db.example.com/base\n'
 
 /** Ce que le moteur répondrait sous le plugin : outil exécuté, dossier, fichiers et git simulés. */

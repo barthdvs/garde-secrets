@@ -1,0 +1,4 @@
+# Faux secrets volontaires du banc d'essai (valeur factice api_key), dans le commit initial.
+# Les lignes actuelles portent un commentaire « gitleaks:allow ».
+3eeda6283faf3baf9be1dd1bd5982da57f4980a3:plugins/garde-secrets/tests/garde.test.ts:generic-api-key:15
+3eeda6283faf3baf9be1dd1bd5982da57f4980a3:plugins/garde-secrets/tests/cas.py:generic-api-key:19

@@ -21,7 +21,7 @@ const SECRETS = [
   // Terraform / OpenTofu : état, variables, plans enregistrés, identifiants du CLI
   String.raw`\.tfstate($|\.)`, String.raw`\.tfvars($|\.json$)`, String.raw`\.tfplan$`, String.raw`(^|/)tfplan[^/]*$`,
   String.raw`(^|/)\.terraformrc$`, String.raw`(^|/)terraform\.rc$`, String.raw`credentials\.tfrc\.json$`,
-].map(p => new RegExp(p))
+].map(p => new RegExp(p)) // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- liste fixe ci-dessus
 // Modèles sans valeur réelle (.env.example…) : jamais secrets
 const EXEMPLES = /\.(example|sample|template|tmpl|dist)$/
 
@@ -456,6 +456,8 @@ async function motifsPerso($: EngineInterface, maison: string | undefined): Prom
     const ligne = brut.trim()
     if (ligne === '' || ligne.startsWith('#')) continue
     try {
+      // Expression écrite par l'utilisateur dans son propre fichier de motifs : c'est le but de ce fichier.
+      // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
       res.push(new RegExp(ligne))
     } catch {
       // motif invalide : ignoré
