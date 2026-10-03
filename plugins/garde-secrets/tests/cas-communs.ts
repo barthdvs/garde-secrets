@@ -534,5 +534,158 @@ export const CAS = {
     "file_path": "/srv/app/.env"
    }
   ]
+ ],
+ "masquage": [
+  [
+   "{\"message\":\"Erreur GET http://hote:9696/1/api?t=movie&apikey={F:HEX32}&offset=0\",\"status\":500}",
+   "{\"message\":\"Erreur GET http://hote:9696/1/api?t=movie&apikey=<masqué par garde-secrets>&offset=0\",\"status\":500}"
+  ],
+  [
+   "curl: (22) https://api.example.com/v1/items?token={F:HEX32} : 401",
+   "curl: (22) https://api.example.com/v1/items?token=<masqué par garde-secrets> : 401"
+  ],
+  [
+   "GET /library?X-App-Token={F:MDP} HTTP/1.1",
+   "GET /library?X-App-Token=<masqué par garde-secrets> HTTP/1.1"
+  ],
+  [
+   "https://stockage.example.com/a.png?se=2026&sig={F:B64}&sp=r",
+   "https://stockage.example.com/a.png?se=2026&sig=<masqué par garde-secrets>&sp=r"
+  ],
+  [
+   "https://example.com/connexion?user=moi&api_key={F:HEX32}#haut",
+   "https://example.com/connexion?user=moi&api_key=<masqué par garde-secrets>#haut"
+  ],
+  [
+   "DATABASE_URL=postgres://appli:{F:MDP}@db.example.com/base",
+   "DATABASE_URL=postgres://appli:<masqué par garde-secrets>@db.example.com/base"
+  ],
+  [
+   "remote: https://moi:{F:GITHUB}@git.example.com/depot.git",
+   "remote: https://moi:<masqué par garde-secrets>@git.example.com/depot.git"
+  ],
+  [
+   "> Authorization: Bearer {F:HEX32}\n> Accept: */*",
+   "> Authorization: Bearer <masqué par garde-secrets>\n> Accept: */*"
+  ],
+  [
+   "curl -H \"Authorization: Basic {F:B64}\" https://example.com",
+   "curl -H \"Authorization: Basic <masqué par garde-secrets>\" https://example.com"
+  ],
+  [
+   "curl -H 'X-Api-Key: {F:HEX32}' http://hote:8080/api/v1/items",
+   "curl -H 'X-Api-Key: <masqué par garde-secrets>' http://hote:8080/api/v1/items"
+  ],
+  [
+   "{\"headers\":{\"authorization\":\"Bearer {F:HEX32}\",\"accept\":\"*/*\"}}",
+   "{\"headers\":{\"authorization\":\"Bearer <masqué par garde-secrets>\",\"accept\":\"*/*\"}}"
+  ],
+  [
+   "{\"X-Auth-Token\": \"{F:HEX32}\", \"X-Request-Id\": \"a1b2c3d4e5f6\"}",
+   "{\"X-Auth-Token\": \"<masqué par garde-secrets>\", \"X-Request-Id\": \"a1b2c3d4e5f6\"}"
+  ],
+  [
+   "{\"user\":\"admin\",\"password\":\"{F:MDP}\",\"port\":5432}",
+   "{\"user\":\"admin\",\"password\":\"<masqué par garde-secrets>\",\"port\":5432}"
+  ],
+  [
+   "api_key: {F:HEX32}\nclient_secret: '{F:MDP}'\nclient_id: appli",
+   "api_key: <masqué par garde-secrets>\nclient_secret: '<masqué par garde-secrets>'\nclient_id: appli"
+  ],
+  [
+   "DB_PASSWORD={F:MDP}\nDB_USER=appli",
+   "DB_PASSWORD=<masqué par garde-secrets>\nDB_USER=appli"
+  ],
+  [
+   "postgres --password={F:MDP} --port 5432",
+   "postgres --password=<masqué par garde-secrets> --port 5432"
+  ],
+  [
+   "{'apiKey': '{F:HEX32}', 'timeout': 30}",
+   "{'apiKey': '<masqué par garde-secrets>', 'timeout': 30}"
+  ],
+  [
+   "jeton : {F:GITHUB} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:AWS} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:GITLAB} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:SLACK} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:ANTHROPIC} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:OPENAI} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:GOOGLE} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:STRIPE} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:VAULT} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:NPM} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:SCW} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "jeton : {F:JWT} (fin)",
+   "jeton : <masqué par garde-secrets> (fin)"
+  ],
+  [
+   "https://hooks.slack.com/services/{F:SLACK_WEBHOOK}",
+   "https://<masqué par garde-secrets>"
+  ],
+  [
+   "avant\n{F:CLE}\naprès",
+   "avant\n<masqué par garde-secrets>\naprès"
+  ],
+  [
+   "sortie coupée :\n{F:CLE_TRONQUEE}",
+   "sortie coupée :\n<masqué par garde-secrets>"
+  ]
+ ],
+ "intact": [
+  "http://hote:9696/1/api?t=movie&apikey=<masqué par garde-secrets>&offset=0",
+  "> Authorization: Bearer <masqué par garde-secrets>",
+  "{\"password\":\"<masqué par garde-secrets>\"}",
+  "postgres://appli:<masqué par garde-secrets>@db.example.com/base",
+  "token_url=https://auth.example.com/oauth2/token",
+  "password_file=/run/secrets/x",
+  "apikey=${API_KEY}",
+  "https://example.com/api?apikey=${API_KEY}&page=2",
+  "curl -H \"Authorization: Bearer $API_TOKEN\" https://example.com",
+  "Authorization: Bearer <jeton>",
+  "Pour régler la clé, écris key=value dans le fichier de configuration.",
+  "-rw------- 1 user user   64 oct.  3 10:00 secrets.txt\ndrwxr-xr-x 2 user user 4096 oct.  3 10:00 tokens",
+  "{\"id\":42,\"title\":\"Film\",\"tmdbId\":603,\"monitored\":true,\"path\":\"/films/Film (1999)\"}",
+  "{\"access_token_type\":\"Bearer\",\"token_type\":\"Bearer\",\"expires_in\":3600}",
+  "password: ********",
+  "password: \"\"",
+  "https://example.com/recherche?q=chat&page=2&tri=date",
+  "ssh://git@git.example.com:2222/depot.git",
+  "max_tokens: 4096\nTOKEN_TTL=3600s\npasswordless: true",
+  "Tokenizer: modele-de-base",
+  "git clone https://git.example.com/exemple/depot.git"
  ]
 }

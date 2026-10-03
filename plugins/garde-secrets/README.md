@@ -2,6 +2,8 @@
 
 Plugin pour Claude Code. Il bloque, **avant exécution**, ce qui ferait sortir un secret de ta machine :
 Claude ne peut plus lire ni afficher un fichier secret, ni imprimer un jeton, ni commiter une clé.
+Et **après exécution**, il masque les secrets reconnaissables dans la sortie des commandes avant que Claude la lise
+(voir [Masquage des sorties](#masquage-des-sorties)).
 
 Il ne change rien à ta façon de travailler : tant que rien de sensible n'est en jeu, tu ne le vois pas.
 
@@ -28,6 +30,9 @@ Dans une session, demande à Claude : « crée un fichier `.env` contenant `A=1`
 La lecture doit être refusée avec un message qui commence par `garde-secrets :`.
 Si le fichier est lu, le plugin n'est pas actif : vérifie `claude plugin list`, mets Claude Code à jour, ou installe Python 3.
 
+Pour le masquage : demande « lance `echo 'https://example.com/api?apikey=abcabcabcabc'` et recopie la sortie ».
+La sortie recopiée doit contenir `apikey=<masqué par garde-secrets>`.
+
 Pour le banc d'essai complet : `claude plugin test <dossier du plugin>` (module intégré) et
 `python3 tests/cas.py` (secours Python, doit finir par `0 échec`). Les deux lisent les mêmes cas.
 
@@ -40,8 +45,43 @@ Pour le banc d'essai complet : `claude plugin test <dossier du plugin>` (module 
 | Afficher des variables d'environnement | `env`, `printenv`, `export -p`, `echo $MON_TOKEN` ; sous PowerShell : `Get-ChildItem Env:`, `echo $env:MON_TOKEN` |
 | Commandes qui impriment un secret | `gh auth token`, `gcloud auth print-access-token`, `aws configure get`, `vault kv get`, `kubectl get secret -o yaml`, `docker inspect`, `docker compose config` |
 | Faire entrer un secret dans git | `git add` ou `git commit` d'un fichier secret, ou d'un contenu reconnu : clé privée, clé AWS, jeton GitHub/GitLab/Slack, clé d'API, JWT, mot de passe écrit en dur, identifiants dans une URL |
+| Secret dans la sortie d'une commande | pas bloqué mais **masqué** : voir ci-dessous |
 
 Le message de refus nomme le fichier ou la variable, jamais la valeur.
+
+## Masquage des sorties
+
+Une commande anodine peut renvoyer un secret : un message d'erreur qui recopie l'URL appelée
+(`…/api?t=movie&apikey=…`), un `curl -v` qui affiche l'en-tête `Authorization`, un fichier de
+configuration listé par un outil. Le contrôle avant exécution ne peut pas le prévoir.
+
+Le plugin relit donc la sortie de **Bash** et **PowerShell** avant que Claude la lise, et remplace la
+**valeur** de chaque secret reconnu (jamais son nom) par `<masqué par garde-secrets>` ; le reste de la
+sortie est inchangé. Claude reçoit une courte note : « garde-secrets : 1 valeur secrète masquée dans
+cette sortie (paramètre d'URL « apikey »). Ne cherche pas à les retrouver. »
+
+| Ce qui est masqué | Exemples |
+|---|---|
+| Paramètres d'URL nommés comme un secret | `?apikey=…`, `&api_key=…`, `&token=…`, `&access_token=…`, `&X-App-Token=…`, `&password=…`, `&sig=…`, `&signature=…`, `&client_secret=…` |
+| Mot de passe dans une URL | `postgres://appli:…@db.example.com/base` |
+| En-têtes d'authentification | `Authorization: Bearer …` (et `Basic`, `Token`…), `X-Api-Key: …`, `X-Auth-Token: …`, `Private-Token: …`, y compris en JSON ou dans un `curl -H` affiché |
+| Champs nommés comme un secret | `"password": "…"`, `api_key: …`, `client_secret=…`, `DB_PASSWORD=…`, `--password=…`, quand la valeur ressemble à un vrai secret (8 caractères ou plus, lettres et chiffres) |
+| Jetons reconnaissables | bloc de clé privée entier, clés AWS, jetons GitHub, GitLab, Slack, Anthropic, OpenAI, Google, Stripe, Vault, npm, Scaleway, JWT |
+
+Ne sont pas masqués : les noms (`token_url=…`, `password_file=…`, `token_type`), les valeurs vides ou
+factices (`********`, `<jeton>`, `${API_KEY}`, `$TOKEN`), une phrase qui contient `key=value` hors d'une URL.
+
+Limites, à connaître :
+
+- Seule la sortie de Bash et PowerShell est relue. Ce que renvoient les autres outils (lecture web, outils MCP…) ne l'est pas.
+- Un secret sans forme reconnaissable (une suite de caractères sans nom de champ autour) passe.
+- C'est Claude qui ne voit pas la valeur. Ce qui s'affiche dans ton terminal pendant que la commande tourne
+  n'est pas concerné. Pour une commande en échec (code de sortie non nul), l'affichage du résultat et le
+  journal de la session sur ton disque gardent la valeur ; pour une commande réussie, ils montrent la sortie masquée.
+- Une sortie trop longue est rangée dans un fichier par Claude Code, qui n'en lit qu'un extrait : le fichier, lui, n'est pas masqué.
+- Le masquage complet n'existe qu'avec le module intégré. Le secours Python masque la sortie des commandes
+  réussies seulement, et seulement sur une version de Claude Code qui accepte le remplacement de sortie
+  (`updatedToolOutput`) pour ses outils intégrés ; sur une version plus ancienne, il ne masque rien.
 
 ## Ce qui reste permis
 
@@ -79,7 +119,7 @@ tests, par exemple), fais l'opération toi-même dans ton terminal : ton `git co
 
 - C'est un garde-fou contre les fuites par inadvertance, pas un bac à sable : un script écrit exprès pour
   lire un secret (`python -c "open('.env')…"`) n'est pas détecté.
-- Le contrôle des commits reconnaît des formes connues de secrets. Un secret sans forme reconnaissable
+- Le contrôle des commits et le masquage des sorties reconnaissent des formes connues de secrets. Un secret sans forme reconnaissable
   (une suite de lettres quelconque, sans mot-clé autour) passe.
 - Le module intégré s'appuie sur une interface de Claude Code encore en accès anticipé : elle peut changer
   d'une version à l'autre. Sur une version qui ne le charge pas, seul le secours Python protège ; sans

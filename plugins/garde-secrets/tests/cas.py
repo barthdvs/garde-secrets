@@ -3,13 +3,14 @@
 
 Les faux secrets sont assemblés par morceaux pour que ce fichier ne contienne lui-même aucun motif de secret.
 """
-import json, subprocess, os, sys, tempfile
+import json, re, subprocess, os, sys, tempfile
 G = os.path.join(os.path.dirname(__file__), "..", "hooks-handlers", "garde.py")
 
 # Cas communs aux deux moteurs : ce qui suit « export const CAS = » dans cas-communs.ts est du JSON.
 with open(os.path.join(os.path.dirname(__file__), "cas-communs.ts"), encoding="utf-8") as f:
     CAS = json.loads(f.read().split("export const CAS = ", 1)[1])
 REFUS, PASSE, REFUS_PERSO = CAS["refus"], CAS["passe"], CAS["refusPerso"]
+MASQUAGE, INTACT = CAS["masquage"], CAS["intact"]
 
 # Faux secrets, assemblés pour ne pas figurer tels quels dans ce fichier
 F_GITHUB = "gh" + "p_" + "a1B2" * 9
@@ -18,6 +19,39 @@ F_CLE = "-----BEGIN " + "RSA PRIVATE KEY-----\nMIIfaux\n"
 F_MDP = 'pass' + 'word = "Xk29fjdk20dkfj3"\n'
 F_YAML = 'api_' + 'key: 9f8e7d6c5b4a39281706f5e4\n'  # gitleaks:allow (faux secret du banc d'essai)
 F_URL = "DATABASE_URL=postgres://appli:" + "s3cretMdp42" + "@db.example.com/base\n"
+
+# Faux secrets des cas de masquage : « {F:NOM} » dans cas-communs.ts (mêmes valeurs dans tests/garde.test.ts)
+F = {
+    "HEX32": "0123456789abcdef" * 2,
+    "MDP": "Xk29" + "fjdk20dkfj3",
+    "B64": "dXNlcjpz" + "M2NyZXQ0Mg==",
+    "GITHUB": F_GITHUB,
+    "AWS": F_AWS,
+    "GITLAB": "gl" + "pat-" + "a1B2c3D4e5F6g7H8i9J0",
+    "SLACK": "xo" + "xb-" + "1234567890-abcdefghij",
+    "SLACK_WEBHOOK": "T0ABC" + "DEF12/B0ABC" + "DEF34/a1b2c3d4e5f6g7h8",
+    "ANTHROPIC": "sk-" + "ant-" + "a1b2c3d4" * 4,
+    "OPENAI": "sk-" + "proj-" + "A1b2C3d4" * 5,
+    "GOOGLE": "AI" + "za" + "B1c2D3e4F5" * 3 + "g6h7i",
+    "STRIPE": "sk" + "_live_" + "a1B2c3D4" * 3,
+    "VAULT": "hv" + "s." + "A1b2C3d4" * 4,
+    "NPM": "np" + "m_" + "a1B2c3D4e5F6" * 3,
+    "SCW": "SC" + "W" + "ABCDEFGHJ0123456K",
+    "JWT": "ey" + "JhbGciOiJIUzI1NiJ9." + "ey" + "JzdWIiOiIxMjM0NTYifQ." + "c2lnbmF0dXJlZmF1c3Nl",
+    "CLE": "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nMIIfaux\nAAAA\n-----END " + "OPENSSH PRIVATE KEY-----",
+    "CLE_TRONQUEE": "-----BEGIN " + "PRIVATE KEY-----\nMIIfaux\nAAAA",
+}
+
+
+def remplir(s):
+    return re.sub(r"\{F:([A-Z0-9_]+)\}", lambda m: F.get(m.group(1), m.group(0)), s)
+
+
+def apres(outil, sortie):
+    """La réponse du hook PostToolUse pour cette sortie : le JSON, ou None s'il ne dit rien."""
+    ev = {"hook_event_name": "PostToolUse", "tool_name": outil, "tool_input": {"command": "x"}, "tool_response": sortie}
+    r = subprocess.run([sys.executable, G], input=json.dumps(ev), capture_output=True, text=True, timeout=30)
+    return json.loads(r.stdout)["hookSpecificOutput"] if r.stdout.strip() else None
 
 
 def decision(outil, entree, motifs, cwd=None):
@@ -104,6 +138,37 @@ with tempfile.TemporaryDirectory() as d:
     attendu("refus", "Bash", "git commit --all -m x", vide, rep, "commit --all", interdit=F_GITHUB)
     ecrire(rep, "README.md", "# essai\nligne anodine\n")
     attendu("passe", "Bash", "git commit -am 'doc'", vide, rep, "commit -am propre")
+
+
+def echec(message):
+    global total, echecs
+    echecs += 1; print("ÉCHEC", message)
+
+
+# Masquage des sorties de Bash / PowerShell (hook PostToolUse)
+for entree, voulu in MASQUAGE:
+    total += 1
+    h = apres("Bash", {"stdout": remplir(entree), "stderr": "", "interrupted": False})
+    if not h: echec("rien masqué : " + entree[:100]); continue
+    sortie = h.get("updatedToolOutput", {})
+    if sortie.get("stdout") != remplir(voulu) or sortie.get("interrupted") is not False:
+        echec("masquage : %s → %s" % (entree[:100], str(sortie)[:200])); continue
+    if not h.get("additionalContext", "").startswith("garde-secrets : "): echec("note absente : " + entree[:100])
+    if any(v in json.dumps(h, ensure_ascii=False) for v in F.values()): echec("valeur restée visible : " + entree[:100])
+    total += 1
+    if apres("Bash", {"stdout": remplir(voulu), "stderr": ""}) is not None: echec("masqué deux fois : " + voulu[:100])
+for entree in INTACT:
+    total += 1
+    if apres("Bash", {"stdout": remplir(entree), "stderr": ""}) is not None: echec("masqué à tort : " + entree[:100])
+
+reel = "Erreur GET http://hote:9696/1/api?t=movie&apikey=" + F["HEX32"] + "&offset=0"
+total += 1
+h = apres("PowerShell", reel + "\n" + F["GITHUB"])
+if not h or h["updatedToolOutput"] != "Erreur GET http://hote:9696/1/api?t=movie&apikey=<masqué par garde-secrets>&offset=0\n<masqué par garde-secrets>" \
+        or "2 valeurs secrètes masquées" not in h["additionalContext"] or "jeton GitHub" not in h["additionalContext"]:
+    echec("PowerShell, sortie en texte : %s" % h)
+total += 1
+if apres("Read", {"stdout": reel}) is not None: echec("la sortie d'un autre outil a été touchée")
 
 print("%d cas, %d échec" % (total, echecs))
 sys.exit(1 if echecs else 0)

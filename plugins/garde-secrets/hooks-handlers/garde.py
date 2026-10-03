@@ -16,6 +16,13 @@ Refuse, AVANT exécution, tout appel d'outil qui ferait sortir un secret :
 Restent permis : copier (`cat > f`, `ssh … < f`), détruire (`shred`), métadonnées (`stat`, `ls`),
 empreintes (`… | sha256sum`), substitution `$(…)` qui ne s'affiche pas (`printf … > f`).
 
+Masque aussi, APRÈS exécution (hook PostToolUse), les secrets reconnaissables dans la sortie
+de Bash / PowerShell (paramètres d'URL, mots de passe dans une URL, en-têtes d'authentification,
+champs nommés comme un secret, jetons connus), par « updatedToolOutput ». Limites du secours : la
+sortie d'une commande en échec (code de sortie non nul) n'y passe pas (PostToolUseFailure ne permet
+pas de la réécrire), et une version de Claude Code qui ne connaît pas « updatedToolOutput » pour
+les outils intégrés ignore le remplacement : seul le module intégré masque alors.
+
 Pas de contournement prévu : pour l'arrêter, l'utilisateur désactive le plugin
 (`claude plugin disable garde-secrets@<source>`, la source est donnée par `claude plugin list`).
 
@@ -68,6 +75,71 @@ AFFECTATIONS = [
 ]
 CLE_ANODINE = re.compile(r"(?i)[_.-](url|uri|path|file|name|id|endpoint|type|ttl|length|size|expir\w*|header|field|prefix)$")
 FACTICE = re.compile(r"(?i)[${}<>*]|change|example|exemple|placeholder|dummy|your|votre|redacted|todo|^[a-z]+://|^[/~.]")
+
+# Masquage des sorties (APRÈS exécution) : ce qui remplace la valeur d'un secret reconnu.
+# Il contient « < », que FACTICE écarte : un texte déjà masqué ne l'est pas deux fois.
+REPERE = "<masqué par garde-secrets>"
+_IA = re.I | re.A
+PEM = re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----(?:[\s\S]*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----|[\s\S]*$)")
+# Paramètre d'URL dont le nom annonce un secret : ?apikey=…, &X-App-Token=…, &sig=…
+PARAMS_URL = re.compile(r"([?&](?:[\w.-]*?(?:api[_-]?key|token|secret|passw(?:or)?d|passkey|signature)|key|auth|pass|sig)=)([^&\s\"'<>#\\]+)", _IA)
+# Mot de passe dans une URL : scheme://utilisateur:<mot de passe>@hote
+URL_MDP = re.compile(r"\b([a-z][a-z0-9+.-]*://[^/\s:@'\"]+:)([^/\s:@'\"]+)@", _IA)
+# En-têtes d'authentification, en clair, en JSON ou dans un « curl -H » affiché
+ENTETES = re.compile(r"\b((?:proxy-)?authorization|x-[a-z0-9-]*?(?:api-?key|token|secret|password|signature)|api-key|private-token)"
+                     r"([\"']?\s*[:=]\s*[\"']?)((?:bearer|basic|token|apitoken|bot|sso-key)\s+)?([^\s\"',;]+)", _IA)
+SCHEMAS = re.compile(r"(?i)^(bearer|basic|token|apitoken|bot|sso-key|digest)$")
+# Champ JSON / YAML / clé=valeur dont le nom annonce un secret
+CHAMPS = re.compile(_CLE + r"([\"']?\s*[:=]\s*[\"']?)([^\s\"',;&]+)", _IA)
+# Jetons reconnaissables : la liste JETONS, sauf la clé privée (masquée en bloc par PEM)
+JETONS_G = [(n, re.compile(p, re.A)) for n, p in JETONS[1:]]
+
+
+def masquer(texte):
+    """Remplace la valeur des secrets reconnus par REPERE, jamais leur nom. Idempotent.
+    Renvoie (texte, nombre, types). Mêmes règles que masquer() dans hooks/garde.ts."""
+    nombre, types = [0], []
+
+    def compte(t):
+        nombre[0] += 1
+        if t not in types: types.append(t)
+
+    def pem(m):
+        compte("clé privée"); return REPERE
+    t = PEM.sub(pem, texte)
+    for nom, rx in JETONS_G:
+        t = rx.sub(lambda m, nom=nom: (compte(nom), REPERE)[1], t)
+
+    def url_mdp(m):
+        if FACTICE.search(m.group(2)): return m.group(0)
+        compte("mot de passe dans une URL"); return m.group(1) + REPERE + "@"
+    t = URL_MDP.sub(url_mdp, t)
+
+    def param(m):
+        if FACTICE.search(m.group(2)): return m.group(0)
+        compte("paramètre d'URL « %s »" % m.group(1)[1:-1][:40]); return m.group(1) + REPERE
+    t = PARAMS_URL.sub(param, t)
+
+    def entete(m):
+        nom, sep, schema, val = m.group(1), m.group(2), m.group(3) or "", m.group(4)
+        if len(val) < 6 or FACTICE.search(val) or SCHEMAS.search(val): return m.group(0)
+        compte("en-tête « %s »" % nom[:40]); return nom + sep + schema + REPERE
+    t = ENTETES.sub(entete, t)
+
+    def champ(m):
+        cle, sep, val = m.group(1), m.group(2), m.group(3)
+        if len(val) < 8 or CLE_ANODINE.search(cle) or FACTICE.search(val): return m.group(0)
+        if not (re.search(r"[A-Za-z]", val) and re.search(r"[0-9]", val)): return m.group(0)
+        compte("champ « %s »" % cle[:40]); return cle + sep + REPERE
+    t = CHAMPS.sub(champ, t)
+    return t, nombre[0], types
+
+
+def note(nombre, types):
+    """La note ajoutée pour le modèle quand une sortie a été masquée — sans aucune valeur."""
+    s = "s" if nombre > 1 else ""
+    return ("garde-secrets : %d valeur%s secrète%s masquée%s dans cette sortie (%s). "
+            "Ne cherche pas à les retrouver." % (nombre, s, s, s, ", ".join(types)))
 
 # Variables d'environnement dont le nom annonce un secret
 VAR_SECRETE = re.compile(r"(?i)\$(?:env:|\{)?\w*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)\w*")
@@ -404,12 +476,38 @@ def refuser(raison):
     sys.exit(0)
 
 
+def masquer_sortie(sortie):
+    """PostToolUse de Bash / PowerShell : renvoie la sortie masquée et la note, ou rien."""
+    nombre, types = 0, []
+    if isinstance(sortie, str):
+        sortie, nombre, types = masquer(sortie)
+    elif isinstance(sortie, dict):
+        sortie = dict(sortie)
+        for champ in ("stdout", "stderr"):
+            if isinstance(sortie.get(champ), str):
+                texte, n, ty = masquer(sortie[champ])
+                if n:
+                    sortie[champ] = texte; nombre += n
+                    types += [x for x in ty if x not in types]
+    if nombre:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PostToolUse", "updatedToolOutput": sortie,
+            "additionalContext": note(nombre, types)}}))
+
+
 def main():
     try:
         ev = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
     outil, entree = ev.get("tool_name", ""), ev.get("tool_input", {}) or {}
+    if ev.get("hook_event_name") == "PostToolUse":
+        if outil in ("Bash", "PowerShell"):
+            try:
+                masquer_sortie(ev.get("tool_response"))
+            except Exception:
+                pass  # un masquage impossible ne doit pas perdre la sortie de l'outil
+        sys.exit(0)
     if ev.get("cwd"): REP[0] = ev["cwd"]
     if outil in ("Read", "Edit", "MultiEdit", "NotebookEdit"):
         p = entree.get("file_path") or entree.get("notebook_path") or ""

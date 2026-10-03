@@ -5,7 +5,13 @@
 // d'un secret. Même logique et mêmes listes que hooks-handlers/garde.py (secours Python pour les
 // versions de Claude Code qui ne chargent pas ce module) : toute règle changée ici l'est aussi là-bas,
 // et tests/cas-communs.ts vérifie les deux.
-import type { EngineInterface, Register } from 'claude-code'
+//
+// Masque aussi, APRÈS exécution, les secrets reconnaissables dans la sortie de Bash et PowerShell
+// (paramètres d'URL, mots de passe dans une URL, en-têtes d'authentification, champs nommés comme un
+// secret, jetons connus) : la valeur est remplacée par REPERE avant que le modèle la lise, et une
+// note le lui signale. Résultat réussi : réécrit dans tool.call ; commande en échec : réécrite dans
+// session.append (tool.call ne peut pas rendre un résultat en erreur).
+import type { EngineInterface, Register, SessionAppendInput, ToolCallResult } from 'claude-code'
 
 // Chemins considérés comme secrets (testés sur chaque mot de la commande / chaque chemin d'outil)
 const SECRETS = [
@@ -50,6 +56,58 @@ const AFFECTATIONS: [string, string][] = [
 ]
 const CLE_ANODINE = /[_.-](url|uri|path|file|name|id|endpoint|type|ttl|length|size|expir\w*|header|field|prefix)$/i
 const FACTICE = /[${}<>*]|change|example|exemple|placeholder|dummy|your|votre|redacted|todo|^[a-z]+:\/\/|^[/~.]/i
+
+// Masquage des sorties (APRÈS exécution) : ce qui remplace la valeur d'un secret reconnu.
+// Il contient « < », que FACTICE écarte : un texte déjà masqué ne l'est pas deux fois.
+export const REPERE = '<masqué par garde-secrets>'
+const PEM = /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----(?:[\s\S]*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----|[\s\S]*$)/g
+// Paramètre d'URL dont le nom annonce un secret : ?apikey=…, &X-App-Token=…, &sig=…
+const PARAMS_URL = /([?&](?:[\w.-]*?(?:api[_-]?key|token|secret|passw(?:or)?d|passkey|signature)|key|auth|pass|sig)=)([^&\s"'<>#\\]+)/gi
+// Mot de passe dans une URL : scheme://utilisateur:<mot de passe>@hote
+const URL_MDP = /\b([a-z][a-z0-9+.-]*:\/\/[^/\s:@'"]+:)([^/\s:@'"]+)@/gi
+// En-têtes d'authentification, en clair, en JSON ou dans un « curl -H » affiché
+const ENTETES = /\b((?:proxy-)?authorization|x-[a-z0-9-]*?(?:api-?key|token|secret|password|signature)|api-key|private-token)(["']?\s*[:=]\s*["']?)((?:bearer|basic|token|apitoken|bot|sso-key)\s+)?([^\s"',;]+)/gi
+const SCHEMAS = /^(bearer|basic|token|apitoken|bot|sso-key|digest)$/i
+// Champ JSON / YAML / clé=valeur dont le nom annonce un secret
+const CHAMPS = new RegExp(CLE + String.raw`(["']?\s*[:=]\s*["']?)([^\s"',;&]+)`, 'gi') // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- motif fixe ci-dessus
+// Jetons reconnaissables : la liste JETONS, sauf la clé privée (masquée en bloc par PEM)
+const JETONS_G: [string, RegExp][] = JETONS.slice(1).map(([nom, rx]) => [nom, new RegExp(rx.source, 'g')]) // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- liste fixe ci-dessus
+
+export type Masquage = { texte: string; nombre: number; types: string[] }
+
+/** Remplace la valeur des secrets reconnus par REPERE, jamais leur nom. Idempotent. */
+export function masquer(texte: string): Masquage {
+  let nombre = 0
+  const types: string[] = []
+  const compte = (type: string) => { nombre += 1; if (!types.includes(type)) types.push(type) }
+  let t = texte.replace(PEM, () => { compte('clé privée'); return REPERE })
+  for (const [nom, rx] of JETONS_G) t = t.replace(rx, () => { compte(nom); return REPERE })
+  t = t.replace(URL_MDP, (m: string, avant: string, mdp: string) => {
+    if (FACTICE.test(mdp)) return m
+    compte('mot de passe dans une URL'); return `${avant}${REPERE}@`
+  })
+  t = t.replace(PARAMS_URL, (m: string, nom: string, val: string) => {
+    if (FACTICE.test(val)) return m
+    compte(`paramètre d'URL « ${nom.slice(1, -1).slice(0, 40)} »`); return nom + REPERE
+  })
+  t = t.replace(ENTETES, (m: string, nom: string, sep: string, schema: string | undefined, val: string) => {
+    if (val.length < 6 || FACTICE.test(val) || SCHEMAS.test(val)) return m
+    compte(`en-tête « ${nom.slice(0, 40)} »`); return nom + sep + (schema ?? '') + REPERE
+  })
+  t = t.replace(CHAMPS, (m: string, cle: string, sep: string, val: string) => {
+    if (val.length < 8 || CLE_ANODINE.test(cle) || FACTICE.test(val)) return m
+    if (!(/[A-Za-z]/.test(val) && /[0-9]/.test(val))) return m
+    compte(`champ « ${cle.slice(0, 40)} »`); return cle + sep + REPERE
+  })
+  return { texte: t, nombre, types }
+}
+
+/** La note ajoutée pour le modèle quand une sortie a été masquée — sans aucune valeur. */
+export function note(nombre: number, types: string[]): string {
+  const s = nombre > 1 ? 's' : ''
+  return `garde-secrets : ${nombre} valeur${s} secrète${s} masquée${s} dans cette sortie (${types.join(', ')}). ` +
+    'Ne cherche pas à les retrouver.'
+}
 
 // Variables d'environnement dont le nom annonce un secret
 const VAR_SECRETE = String.raw`\$(?:env:|\{)?\w*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)\w*`
@@ -501,9 +559,86 @@ async function decider($: EngineInterface, e: Record<string, unknown>): Promise<
   }
 }
 
+const SHELLS = ['Bash', 'PowerShell']
+
+/** Résultat réussi d'un shell : stdout et stderr masqués, la note en contexte. Inchangé s'il n'y a rien à masquer. */
+export function masquerResultat(outil: string, r: ToolCallResult): ToolCallResult {
+  if (!SHELLS.includes(outil) || r.deny !== undefined || r.isError === true) return r
+  const res = r.result as Record<string, unknown> | null
+  if (res === null || typeof res !== 'object') return r
+  let nombre = 0
+  const types: string[] = []
+  const copie: Record<string, unknown> = { ...res }
+  for (const champ of ['stdout', 'stderr']) {
+    const v = res[champ]
+    if (typeof v !== 'string') continue
+    const m = masquer(v)
+    if (m.nombre === 0) continue
+    copie[champ] = m.texte
+    nombre += m.nombre
+    for (const t of m.types) if (!types.includes(t)) types.push(t)
+  }
+  if (nombre === 0) return r
+  // Sans « ref » ni « text » : Claude Code refait le texte du modèle à partir du résultat modifié.
+  return { result: copie as never, context: [...(r.context ?? []), note(nombre, types)] }
+}
+
+type Bloc = { type?: string; text?: string; content?: unknown; [k: string]: unknown }
+
+/**
+ * Ligne de résultat d'un shell, telle que la conversation la garde : le contenu de chaque tool_result
+ * masqué, la note ajoutée. Sert aux commandes en échec (code de sortie non nul), dont tool.call ne
+ * peut pas réécrire le résultat. undefined s'il n'y a rien à changer.
+ */
+export function masquerLigne(e: SessionAppendInput): SessionAppendInput['message'] | undefined {
+  const origine = e.origin as { kind?: string; tool?: string }
+  if (e.door !== 'tool-result' || origine.kind !== 'tool' || !SHELLS.includes(origine.tool ?? '')) return undefined
+  let nombre = 0
+  const types: string[] = []
+  const passe = (s: string) => {
+    const m = masquer(s)
+    nombre += m.nombre
+    for (const t of m.types) if (!types.includes(t)) types.push(t)
+    return m.texte
+  }
+  const blocs = (e.message.content as Bloc[]).map(b => {
+    if (b.type !== 'tool_result') return b
+    if (typeof b.content === 'string') return { ...b, content: passe(b.content) }
+    if (Array.isArray(b.content)) {
+      return { ...b, content: (b.content as Bloc[]).map(x => (x.type === 'text' && typeof x.text === 'string' ? { ...x, text: passe(x.text) } : x)) }
+    }
+    return b
+  })
+  if (nombre === 0) return undefined
+  const n = note(nombre, types)
+  const avecNote = blocs.map(b => {
+    if (b.type !== 'tool_result') return b
+    if (typeof b.content === 'string') return { ...b, content: `${b.content}\n\n${n}` }
+    if (Array.isArray(b.content)) return { ...b, content: [...(b.content as Bloc[]), { type: 'text', text: n }] }
+    return b
+  })
+  return { ...e.message, content: avecNote as never }
+}
+
 export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     const raison = await decider($, e as unknown as Record<string, unknown>)
-    return raison === undefined ? next(e) : { deny: refus(raison) }
+    if (raison !== undefined) return { deny: refus(raison) }
+    const r = await next(e)
+    try {
+      return masquerResultat(txt((e as unknown as Record<string, unknown>).tool), r)
+    } catch {
+      return r // un masquage impossible ne doit pas perdre le résultat de l'outil
+    }
+  })
+  // Filet : la ligne de résultat d'un shell avant que le modèle la lise (seul moyen pour une commande en échec).
+  on('session.append', async ($, e, next) => {
+    let message: SessionAppendInput['message'] | undefined
+    try {
+      message = masquerLigne(e)
+    } catch {
+      message = undefined
+    }
+    return next(message === undefined ? e : { ...e, message })
   })
 }
