@@ -1,0 +1,14 @@
+{
+  "name": "garde-secrets",
+  "description": "Plugin Claude Code qui empêche la fuite de secrets",
+  "owner": {
+    "name": "barthdvs"
+  },
+  "plugins": [
+    {
+      "name": "garde-secrets",
+      "source": "./plugins/garde-secrets",
+      "description": "Empêche Claude de lire, d'afficher ou de commiter un secret (clés, .env, jetons, état Terraform…)"
+    }
+  ]
+}
