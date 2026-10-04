@@ -1,8 +1,8 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "garde-secrets",
-  "version": "2.2.0",
-  "description": "Empêche Claude de lire, d'afficher ou de commiter un secret : clés privées et SSH, .env, identifiants cloud, jetons, état et variables Terraform. Masque les secrets reconnaissables dans la sortie des commandes. Copier, détruire, stat et empreintes restent permis.",
+  "version": "2.3.0",
+  "description": "Empêche Claude de lire, d'afficher ou de commiter un secret : clés privées et SSH, .env, identifiants cloud, jetons, état et variables Terraform, /etc/shadow, rclone, restic, coffre Bitwarden. Masque les secrets reconnaissables dans la sortie des commandes. Copier, détruire, stat et empreintes restent permis.",
   "author": {
     "name": "barthdvs"
   }

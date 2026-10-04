@@ -27,6 +27,13 @@ const SECRETS = [
   // Terraform / OpenTofu : état, variables, plans enregistrés, identifiants du CLI
   String.raw`\.tfstate($|\.)`, String.raw`\.tfvars($|\.json$)`, String.raw`\.tfplan$`, String.raw`(^|/)tfplan[^/]*$`,
   String.raw`(^|/)\.terraformrc$`, String.raw`(^|/)terraform\.rc$`, String.raw`credentials\.tfrc\.json$`,
+  // système et réseau : empreintes des mots de passe, clés Wi-Fi, PPP, VRRP
+  String.raw`(^|/)etc/g?shadow(-|\.[^/\s]*)?$`, String.raw`(^|/)wpa_supplicant[^/\s]*\.conf$`, String.raw`(^|/)(chap|pap)-secrets$`,
+  String.raw`(^|/)keepalived\.conf$`,
+  // stockage et sauvegardes : rclone, s3cmd, mot de passe d'un dépôt restic
+  String.raw`(^|/)rclone\.conf$`, String.raw`(^|/)\.s3cfg$`, String.raw`restic[^/\s]*(/[^/\s]*)?pass(wd|word)?(\.txt)?$`,
+  // gestionnaire de mots de passe Bitwarden / Vaultwarden auto-hébergé : base et configuration
+  String.raw`(^|/)([^/\s]*([Vv]ault|[Bb]it)[Ww]arden[^/\s]*|vw-data|bwdata)/(.*/)?(db\.sqlite3(-wal|-shm)?|config\.json)$`,
 ].map(p => new RegExp(p)) // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- liste fixe ci-dessus
 // Modèles sans valeur réelle (.env.example…) : jamais secrets
 const EXEMPLES = /\.(example|sample|template|tmpl|dist)$/
@@ -49,7 +56,7 @@ const JETONS: [string, RegExp][] = [
   ['jeton JWT', /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
 ]
 const URL_IDENTIFIANTS = String.raw`[a-z][a-z0-9+.-]*://[^/\s:@'"]+:([^/\s:@'"]{6,})@`
-const CLE = String.raw`([\w.-]{0,40}(?:passw(?:or)?d|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[\w.-]{0,40})`
+const CLE = String.raw`([\w.-]{0,40}(?:passw(?:or)?d|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|bw_session)[\w.-]{0,40})`
 const AFFECTATIONS: [string, string][] = [
   [CLE + String.raw`["']?\s*[:=]\s*["']([^"'\s]{12,})["']`, 'gi'],
   [CLE + String.raw`["']?\s*[:=]\s*([A-Za-z0-9+/=_-]{16,})\s*$`, 'gim'],
@@ -110,8 +117,8 @@ export function note(nombre: number, types: string[]): string {
 }
 
 // Variables d'environnement dont le nom annonce un secret
-const VAR_SECRETE = String.raw`\$(?:env:|\{)?\w*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)\w*`
-const NOM_SECRET = /(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)/i
+const VAR_SECRETE = String.raw`\$(?:env:|\{)?\w*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|BW_SESSION)\w*`
+const NOM_SECRET = /(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|BW_SESSION)/i
 const TF_LOG = /^TF_LOG(_CORE|_PROVIDER)?=(trace|debug)$/i
 const TERRAFORM = new Set(['terraform', 'tofu', 'terragrunt'])
 // Commandes qui impriment un secret sur la sortie
@@ -129,7 +136,15 @@ const IMPRIME_SECRET: [RegExp, string][] = [
   [/^docker (compose )?exec\b.* (env|printenv)$/, "cette commande affiche l'environnement du conteneur"],
   [/^security find-(generic|internet)-password\b.* -w/, 'cette commande affiche un mot de passe du trousseau'],
   [/^op read\b/, '« op read » affiche un secret 1Password'],
+  [/^bw export\b(?!.*encrypted_json)/, '« bw export » écrit le coffre Bitwarden en clair'],
+  [/^bw get (password|totp|notes|item|attachment|send)\b/, '« bw get » affiche un secret du coffre Bitwarden'],
+  [/^bw list items\b/, '« bw list items » affiche les éléments du coffre Bitwarden, mots de passe compris'],
+  [/^bw (unlock|login)\b/, '« bw unlock / login » affiche la clé de session du coffre (BW_SESSION)'],
+  [/^getent g?shadow\b/, '« getent shadow » affiche les empreintes des mots de passe du système'],
 ]
+// Clients SQLite : afficher le contenu d'une base secrète (gestionnaire de mots de passe…)
+const SQLITE = new Set(['sqlite3', 'sqlite', 'litecli'])
+const SQL_CONTENU = /\bselect\b|\.dump\b|^</i
 
 const CONSEIL_GIT =
   "Rien n'a été ajouté ni commité. Retire ces éléments de l'index (git restore --staged), " +
@@ -462,6 +477,12 @@ async function analyser($: EngineInterface, ctx: Contexte, cmd: string, maison: 
       if (visible) {
         const r = controleEnv(mot, args, [mot, ...args].join(' '))
         if (r !== undefined) return r
+      }
+      if (SQLITE.has(mot) && visible) {
+        const bases = args.filter(a => estSecret(a, ctx.motifs))
+        if (bases.length > 0 && args.some(a => !bases.includes(a) && SQL_CONTENU.test(a))) {
+          return `« ${mot} » afficherait le contenu de la base ${[...new Set(bases)].sort().join(', ')}`
+        }
       }
       if (!AFFICHAGE.has(mot)) continue
       // Fichiers secrets lus par cette étape (hors redirection de sortie « > f »)

@@ -296,6 +296,197 @@ export const CAS = {
   [
    "PowerShell",
    "gh.exe auth token"
+  ],
+  [
+   "Bash",
+   "cat /etc/keepalived/keepalived.conf"
+  ],
+  [
+   "Bash",
+   "grep auth_pass /etc/keepalived/keepalived.conf"
+  ],
+  [
+   "Bash",
+   "ssh admin@routeur 'cat /etc/keepalived/keepalived.conf'"
+  ],
+  [
+   "Bash",
+   "sudo cat /etc/shadow"
+  ],
+  [
+   "Bash",
+   "cat /etc/gshadow"
+  ],
+  [
+   "Bash",
+   "head -3 /etc/shadow-"
+  ],
+  [
+   "Bash",
+   "docker run --rm -v /:/hote alpine sh -c 'cat /hote/etc/shadow'"
+  ],
+  [
+   "Bash",
+   "getent shadow"
+  ],
+  [
+   "Bash",
+   "getent gshadow admin"
+  ],
+  [
+   "Bash",
+   "cat /etc/wpa_supplicant/wpa_supplicant.conf"
+  ],
+  [
+   "Bash",
+   "grep psk /etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
+  ],
+  [
+   "Bash",
+   "cat /etc/ppp/chap-secrets"
+  ],
+  [
+   "Bash",
+   "cat /etc/ppp/pap-secrets"
+  ],
+  [
+   "Bash",
+   "cat ~/.config/rclone/rclone.conf"
+  ],
+  [
+   "Bash",
+   "grep secret_access_key /home/user/.config/rclone/rclone.conf"
+  ],
+  [
+   "Bash",
+   "cat ~/.s3cfg"
+  ],
+  [
+   "Bash",
+   "cat /etc/restic/password"
+  ],
+  [
+   "Bash",
+   "cat /root/.restic-password"
+  ],
+  [
+   "Bash",
+   "cat /srv/sauvegarde/restic.pass"
+  ],
+  [
+   "Bash",
+   "tail -1 /etc/restic/repo-password.txt"
+  ],
+  [
+   "Bash",
+   "strings /srv/vaultwarden/data/db.sqlite3"
+  ],
+  [
+   "Bash",
+   "cat /opt/vw-data/config.json"
+  ],
+  [
+   "Bash",
+   "sqlite3 /srv/vaultwarden/data/db.sqlite3 .dump"
+  ],
+  [
+   "Bash",
+   "sqlite3 /srv/vaultwarden/data/db.sqlite3 'SELECT email, password_hash FROM users'"
+  ],
+  [
+   "Bash",
+   "sudo sqlite3 /var/lib/bitwarden/db.sqlite3 \"select * from ciphers\""
+  ],
+  [
+   "Bash",
+   "ssh hote 'sqlite3 /srv/vaultwarden/data/db.sqlite3 .dump'"
+  ],
+  [
+   "Bash",
+   "sqlite3 /srv/vaultwarden/data/db.sqlite3 < requete.sql"
+  ],
+  [
+   "Bash",
+   "bw export"
+  ],
+  [
+   "Bash",
+   "bw export --format json --output coffre.json"
+  ],
+  [
+   "Bash",
+   "bw get password serveur-mail"
+  ],
+  [
+   "Bash",
+   "bw get item 1234-abcd"
+  ],
+  [
+   "Bash",
+   "bw get totp compte"
+  ],
+  [
+   "Bash",
+   "bw list items --search mail"
+  ],
+  [
+   "Bash",
+   "bw unlock --raw"
+  ],
+  [
+   "Bash",
+   "bw unlock --passwordenv BW_MDP"
+  ],
+  [
+   "Bash",
+   "echo $BW_SESSION"
+  ],
+  [
+   "Bash",
+   "printenv BW_SESSION"
+  ],
+  [
+   "Read",
+   {
+    "file_path": "/etc/keepalived/keepalived.conf"
+   }
+  ],
+  [
+   "Read",
+   {
+    "file_path": "/etc/shadow"
+   }
+  ],
+  [
+   "Read",
+   {
+    "file_path": "/home/user/.config/rclone/rclone.conf"
+   }
+  ],
+  [
+   "Read",
+   {
+    "file_path": "/home/user/.s3cfg"
+   }
+  ],
+  [
+   "Read",
+   {
+    "file_path": "/etc/restic/password"
+   }
+  ],
+  [
+   "Read",
+   {
+    "file_path": "/srv/vaultwarden/data/config.json"
+   }
+  ],
+  [
+   "Grep",
+   {
+    "pattern": "psk",
+    "path": "/etc/wpa_supplicant/wpa_supplicant.conf"
+   }
   ]
  ],
  "passe": [
@@ -515,6 +706,134 @@ export const CAS = {
   [
    "Bash",
    "type python3"
+  ],
+  [
+   "Bash",
+   "ls -l /etc/keepalived/keepalived.conf"
+  ],
+  [
+   "Bash",
+   "stat /etc/shadow"
+  ],
+  [
+   "Bash",
+   "sha256sum /etc/rclone/rclone.conf"
+  ],
+  [
+   "Bash",
+   "sha256sum < /home/user/.config/rclone/rclone.conf"
+  ],
+  [
+   "Bash",
+   "ls -la /etc/wpa_supplicant/"
+  ],
+  [
+   "Bash",
+   "cat /etc/keepalived/keepalived.conf.sample"
+  ],
+  [
+   "Bash",
+   "cat wpa_supplicant.conf.example"
+  ],
+  [
+   "Bash",
+   "cp /etc/keepalived/keepalived.conf /root/keepalived.conf.bak"
+  ],
+  [
+   "Bash",
+   "cat /etc/passwd"
+  ],
+  [
+   "Bash",
+   "getent passwd admin"
+  ],
+  [
+   "Bash",
+   "restic -r /srv/depot --password-file /etc/restic/password snapshots"
+  ],
+  [
+   "Bash",
+   "RESTIC_PASSWORD_FILE=/etc/restic/password restic check"
+  ],
+  [
+   "Bash",
+   "cat /srv/scripts/restic-password-rotation.sh"
+  ],
+  [
+   "Bash",
+   "rclone --config ~/.config/rclone/rclone.conf ls distant:"
+  ],
+  [
+   "Bash",
+   "s3cmd -c ~/.s3cfg ls s3://seau"
+  ],
+  [
+   "Bash",
+   "ls -l /srv/vaultwarden/data/db.sqlite3"
+  ],
+  [
+   "Bash",
+   "sqlite3 /srv/vaultwarden/data/db.sqlite3 .tables"
+  ],
+  [
+   "Bash",
+   "sqlite3 /srv/vaultwarden/data/db.sqlite3 \".backup '/sauvegardes/vw.sqlite3'\""
+  ],
+  [
+   "Bash",
+   "sqlite3 /srv/vaultwarden/data/db.sqlite3 .dump | sha256sum"
+  ],
+  [
+   "Bash",
+   "sqlite3 appli.db 'SELECT * FROM commandes'"
+  ],
+  [
+   "Bash",
+   "bw status"
+  ],
+  [
+   "Bash",
+   "bw sync"
+  ],
+  [
+   "Bash",
+   "bw lock"
+  ],
+  [
+   "Bash",
+   "bw list folders"
+  ],
+  [
+   "Bash",
+   "bw get username compte"
+  ],
+  [
+   "Bash",
+   "bw export --format encrypted_json --output coffre.json"
+  ],
+  [
+   "Bash",
+   "export BW_SESSION=$(bw unlock --raw --passwordfile ~/.mdp-bw)"
+  ],
+  [
+   "Bash",
+   "curl -u \"moi:$(bw get password compte)\" https://api.example.com/"
+  ],
+  [
+   "Bash",
+   "echo $XDG_SESSION_TYPE"
+  ],
+  [
+   "Read",
+   {
+    "file_path": "/etc/keepalived/keepalived.conf.example"
+   }
+  ],
+  [
+   "Read",
+   {
+    "file_path": "/srv/appli/config.json"
+   }
   ]
  ],
  "refusPerso": [
@@ -663,6 +982,10 @@ export const CAS = {
   [
    "sortie coupée :\n{F:CLE_TRONQUEE}",
    "sortie coupée :\n<masqué par garde-secrets>"
+  ],
+  [
+   "export BW_SESSION=\"{F:B64}\"",
+   "export BW_SESSION=\"<masqué par garde-secrets>\""
   ]
  ],
  "intact": [

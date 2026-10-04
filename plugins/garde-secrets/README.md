@@ -41,9 +41,12 @@ Pour le banc d'essai complet : `claude plugin test <dossier du plugin>` (module 
 | Situation | Exemples |
 |---|---|
 | Lire ou afficher un fichier secret | `.env`, `*.key`, `*.pem`, clés SSH (`id_rsa`, `id_ed25519`…), `*.p12`, `*.kdbx`, `~/.aws/credentials`, `~/.netrc`, `~/.kube/config`, dossiers `secrets/` |
+| Fichiers système et réseau | `/etc/shadow`, `/etc/gshadow` (et leurs copies `shadow-`), `wpa_supplicant*.conf`, `chap-secrets` / `pap-secrets` (PPP), `keepalived.conf` ; `getent shadow` |
+| Stockage et sauvegardes | `rclone.conf`, `~/.s3cfg`, fichier de mot de passe d'un dépôt restic (`/etc/restic/password`, `.restic-password`, `restic.pass`…) |
+| Bitwarden / Vaultwarden | lecture de la base (`db.sqlite3`) et de `config.json` d'un dossier `vaultwarden`, `bitwarden`, `vw-data` ou `bwdata` ; `sqlite3 … .dump` ou `SELECT` sur cette base ; CLI `bw` : `bw export` (sauf `encrypted_json`), `bw get password` / `item` / `totp` / `notes`, `bw list items`, `bw unlock`, `bw login`, `echo $BW_SESSION` |
 | Terraform / OpenTofu | lecture de `*.tfstate`, `*.tfvars`, plans enregistrés ; `terraform show`, `state pull`, `state show`, `console`, `output -json`, `output -raw`, `output <nom>`, `TF_LOG=DEBUG` |
 | Afficher des variables d'environnement | `env`, `printenv`, `export -p`, `echo $MON_TOKEN` ; sous PowerShell : `Get-ChildItem Env:`, `echo $env:MON_TOKEN` |
-| Commandes qui impriment un secret | `gh auth token`, `gcloud auth print-access-token`, `aws configure get`, `vault kv get`, `kubectl get secret -o yaml`, `docker inspect`, `docker compose config` |
+| Commandes qui impriment un secret | `gh auth token`, `gcloud auth print-access-token`, `aws configure get`, `vault kv get`, `kubectl get secret -o yaml`, `docker inspect`, `docker compose config`, `op read` |
 | Faire entrer un secret dans git | `git add` ou `git commit` d'un fichier secret, ou d'un contenu reconnu : clé privée, clé AWS, jeton GitHub/GitLab/Slack, clé d'API, JWT, mot de passe écrit en dur, identifiants dans une URL |
 | Secret dans la sortie d'une commande | pas bloqué mais **masqué** : voir ci-dessous |
 
@@ -65,7 +68,7 @@ cette sortie (paramètre d'URL « apikey »). Ne cherche pas à les retrouver. �
 | Paramètres d'URL nommés comme un secret | `?apikey=…`, `&api_key=…`, `&token=…`, `&access_token=…`, `&X-App-Token=…`, `&password=…`, `&sig=…`, `&signature=…`, `&client_secret=…` |
 | Mot de passe dans une URL | `postgres://appli:…@db.example.com/base` |
 | En-têtes d'authentification | `Authorization: Bearer …` (et `Basic`, `Token`…), `X-Api-Key: …`, `X-Auth-Token: …`, `Private-Token: …`, y compris en JSON ou dans un `curl -H` affiché |
-| Champs nommés comme un secret | `"password": "…"`, `api_key: …`, `client_secret=…`, `DB_PASSWORD=…`, `--password=…`, quand la valeur ressemble à un vrai secret (8 caractères ou plus, lettres et chiffres) |
+| Champs nommés comme un secret | `"password": "…"`, `api_key: …`, `client_secret=…`, `DB_PASSWORD=…`, `--password=…`, `BW_SESSION="…"`, quand la valeur ressemble à un vrai secret (8 caractères ou plus, lettres et chiffres) |
 | Jetons reconnaissables | bloc de clé privée entier, clés AWS, jetons GitHub, GitLab, Slack, Anthropic, OpenAI, Google, Stripe, Vault, npm, Scaleway, JWT |
 
 Ne sont pas masqués : les noms (`token_url=…`, `password_file=…`, `token_type`), les valeurs vides ou
@@ -89,6 +92,9 @@ Limites, à connaître :
 - Comparer des empreintes : `sha256sum < fichier`.
 - Utiliser un secret sans l'afficher : `curl -H "Authorization: Bearer $API_TOKEN" …`, `ssh -i ~/.ssh/id_ed25519 …`, `docker run --env-file .env …`.
 - Les fichiers modèles : `.env.example`, `*.tfvars.example`, `*.sample`, `*.template`.
+- Utiliser ces fichiers sans les afficher : `restic --password-file /etc/restic/password snapshots`, `rclone --config … ls`,
+  `sqlite3 …/db.sqlite3 .tables` ou `".backup '…'"`, `bw status`, `bw sync`, `bw lock`, `bw list folders`,
+  `export BW_SESSION=$(bw unlock --raw …)` (la clé ne s'affiche pas), `bw export --format encrypted_json`.
 - Terraform au quotidien : `init`, `validate`, `fmt`, `plan`, `apply`, `state list`, `output` sans argument.
 
 ## Terraform : ce qu'il faut savoir
@@ -119,6 +125,9 @@ tests, par exemple), fais l'opération toi-même dans ton terminal : ton `git co
 
 - C'est un garde-fou contre les fuites par inadvertance, pas un bac à sable : un script écrit exprès pour
   lire un secret (`python -c "open('.env')…"`) n'est pas détecté.
+- Une base Bitwarden / Vaultwarden rangée ailleurs que dans un dossier qui porte ce nom n'est pas reconnue :
+  ajoute son chemin à tes motifs (ci-dessus) ; le contrôle de `sqlite3` s'applique alors à elle aussi. Sur une base
+  secrète, tout `SELECT` est refusé, même un simple `count(*)`.
 - Le contrôle des commits et le masquage des sorties reconnaissent des formes connues de secrets. Un secret sans forme reconnaissable
   (une suite de lettres quelconque, sans mot-clé autour) passe.
 - Le module intégré s'appuie sur une interface de Claude Code encore en accès anticipé : elle peut changer

@@ -10,7 +10,8 @@ Refuse, AVANT exécution, tout appel d'outil qui ferait sortir un secret :
   - commande Bash où un fichier secret est passé à une commande d'affichage (cat, grep, head,
     openssl, file, xxd…), y compris dans `ssh … '…'`, `sh -c '…'`, `docker exec … sh -c '…'` ;
   - commandes qui impriment un secret : `terraform show`, `terraform state pull`, `terraform output -json`,
-    `env`, `echo $TOKEN`, `gh auth token`, `kubectl get secret -o yaml`… ;
+    `env`, `echo $TOKEN`, `gh auth token`, `kubectl get secret -o yaml`, `bw get password`, `getent shadow`… ;
+  - `sqlite3 … .dump` ou `SELECT` sur une base secrète (coffre Bitwarden / Vaultwarden…) ;
   - `git add` / `git commit` qui feraient entrer dans le dépôt un fichier secret ou un contenu
     reconnu comme secret (clé privée, jeton, mot de passe affecté en dur).
 Restent permis : copier (`cat > f`, `ssh … < f`), détruire (`shred`), métadonnées (`stat`, `ls`),
@@ -45,6 +46,13 @@ SECRETS = [
     # Terraform / OpenTofu : état, variables, plans enregistrés, identifiants du CLI
     r"\.tfstate($|\.)", r"\.tfvars($|\.json$)", r"\.tfplan$", r"(^|/)tfplan[^/]*$",
     r"(^|/)\.terraformrc$", r"(^|/)terraform\.rc$", r"credentials\.tfrc\.json$",
+    # système et réseau : empreintes des mots de passe, clés Wi-Fi, PPP, VRRP
+    r"(^|/)etc/g?shadow(-|\.[^/\s]*)?$", r"(^|/)wpa_supplicant[^/\s]*\.conf$", r"(^|/)(chap|pap)-secrets$",
+    r"(^|/)keepalived\.conf$",
+    # stockage et sauvegardes : rclone, s3cmd, mot de passe d'un dépôt restic
+    r"(^|/)rclone\.conf$", r"(^|/)\.s3cfg$", r"restic[^/\s]*(/[^/\s]*)?pass(wd|word)?(\.txt)?$",
+    # gestionnaire de mots de passe Bitwarden / Vaultwarden auto-hébergé : base et configuration
+    r"(^|/)([^/\s]*([Vv]ault|[Bb]it)[Ww]arden[^/\s]*|vw-data|bwdata)/(.*/)?(db\.sqlite3(-wal|-shm)?|config\.json)$",
 ]
 # Modèles sans valeur réelle (.env.example…) : jamais secrets
 EXEMPLES_RE = re.compile(r"\.(example|sample|template|tmpl|dist)$")
@@ -68,7 +76,7 @@ JETONS = [
 ]
 JETONS_RE = [(n, re.compile(p)) for n, p in JETONS]
 URL_IDENTIFIANTS = re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@'\"]+:([^/\s:@'\"]{6,})@")
-_CLE = r"([\w.-]{0,40}(?:passw(?:or)?d|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[\w.-]{0,40})"
+_CLE = r"([\w.-]{0,40}(?:passw(?:or)?d|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|bw_session)[\w.-]{0,40})"
 AFFECTATIONS = [
     re.compile(r"(?i)" + _CLE + r"[\"']?\s*[:=]\s*[\"']([^\"'\s]{12,})[\"']"),
     re.compile(r"(?im)" + _CLE + r"[\"']?\s*[:=]\s*([A-Za-z0-9+/=_-]{16,})\s*$"),
@@ -142,8 +150,8 @@ def note(nombre, types):
             "Ne cherche pas à les retrouver." % (nombre, s, s, s, ", ".join(types)))
 
 # Variables d'environnement dont le nom annonce un secret
-VAR_SECRETE = re.compile(r"(?i)\$(?:env:|\{)?\w*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)\w*")
-NOM_SECRET = re.compile(r"(?i)(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)")
+VAR_SECRETE = re.compile(r"(?i)\$(?:env:|\{)?\w*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|BW_SESSION)\w*")
+NOM_SECRET = re.compile(r"(?i)(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|BW_SESSION)")
 TF_LOG = re.compile(r"(?i)^TF_LOG(_CORE|_PROVIDER)?=(trace|debug)$")
 TERRAFORM = {"terraform", "tofu", "terragrunt"}
 # Commandes qui impriment un secret sur la sortie
@@ -161,7 +169,15 @@ IMPRIME_SECRET = [
     (r"^docker (compose )?exec\b.* (env|printenv)$", "cette commande affiche l'environnement du conteneur"),
     (r"^security find-(generic|internet)-password\b.* -w", "cette commande affiche un mot de passe du trousseau"),
     (r"^op read\b", "« op read » affiche un secret 1Password"),
+    (r"^bw export\b(?!.*encrypted_json)", "« bw export » écrit le coffre Bitwarden en clair"),
+    (r"^bw get (password|totp|notes|item|attachment|send)\b", "« bw get » affiche un secret du coffre Bitwarden"),
+    (r"^bw list items\b", "« bw list items » affiche les éléments du coffre Bitwarden, mots de passe compris"),
+    (r"^bw (unlock|login)\b", "« bw unlock / login » affiche la clé de session du coffre (BW_SESSION)"),
+    (r"^getent g?shadow\b", "« getent shadow » affiche les empreintes des mots de passe du système"),
 ]
+# Clients SQLite : afficher le contenu d'une base secrète (gestionnaire de mots de passe…)
+SQLITE = {"sqlite3", "sqlite", "litecli"}
+SQL_CONTENU = re.compile(r"(?i)\bselect\b|\.dump\b|^<")
 IMPRIME_SECRET_RE = [(re.compile(p), r) for p, r in IMPRIME_SECRET]
 
 CONSEIL_GIT = ("Rien n'a été ajouté ni commité. Retire ces éléments de l'index (git restore --staged), "
@@ -447,6 +463,10 @@ def analyser(cmd, affiche=True, profondeur=0, local=True):
             if visible:
                 r = controle_env(mot, args, " ".join([mot] + args))
                 if r: return r
+            if mot in SQLITE and visible:
+                bases = [a for a in args if est_secret(a)]
+                if bases and any(SQL_CONTENU.search(a) for a in args if a not in bases):
+                    return "« %s » afficherait le contenu de la base %s" % (mot, ", ".join(sorted(set(bases))))
             if mot not in AFFICHAGE: continue
             # Fichiers secrets lus par cette étape (hors redirection de sortie « > f »)
             lus, prec = [], ""
